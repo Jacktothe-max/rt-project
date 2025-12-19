@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  teacher
+  school
+  admin
+}
+
+enum AccountStatus {
+  active
+  suspended
+  disabled
+}
+
+enum NotificationType {
+  job_alert
+  system_alert
+}
+
+// -------- Phase 3 enums --------
+enum CountryCode {
+  AU
+  NZ
+  US
+  CA
+  GB
+}
+
+enum CurrencyCode {
+  AUD
+  NZD
+  USD
+  CAD
+  GBP
+}
+
+enum TeacherSubscriptionTier {
+  basic
+  pro
+}
+
+enum SchoolSubscriptionTier {
+  free
+  pro
+  enterprise
+}
+
+enum CredentialType {
+  teacher_registration
+  working_with_children
+  other
+}
+
+enum CredentialVerificationStatus {
+  submitted
+  approved
+  rejected
+}
+
+enum EnterpriseMemberRole {
+  admin
+  member
+}
+
+model User {
+  id            String        @id @default(uuid())
+  role          UserRole
+  accountStatus AccountStatus @map("account_status")
+  email         String        @unique
+  phonePrimary  String?       @map("phone_primary")
+  passwordHash  String        @map("password_hash")
+
+  teacherProfile             TeacherProfile?
+  teacherLocation            TeacherLocation?
+  teacherWeeklyAvailability  TeacherWeeklyAvailability[]
+  teacherAvailabilityCalendar TeacherAvailabilityCalendar[]
+  teacherSubscriptions       TeacherSubscription[]
+  teacherSubscriptionFlags   TeacherSubscriptionFlags?
+  credentialVerifications    CredentialVerification[]
+  sentMessages               Message[] @relation("MessageSender")
+  receivedMessages           Message[] @relation("MessageReceiver")
+  notifications              Notification[]
+  schoolFavourites           SchoolFavourite[] @relation("SchoolFavouritesSchool")
+  teacherFavouritedBySchools SchoolFavourite[] @relation("SchoolFavouritesTeacher")
+  schoolSubscriptions        SchoolSubscription[]
+  enterpriseMemberships      EnterpriseSchoolMember[]
+
+  @@map("users")
+}
+
+model TeacherProfile {
+  teacherUserId             String @id @map("teacher_user_id")
+  name                String
+  teachingLevel       String @map("teaching_level")
+  subjectsSpecialties String @map("subjects_specialties")
+  yearsOfExperience   Int    @map("years_of_experience")
+  qualifications      String
+  profilePicture      String @map("profile_picture")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_profiles")
+}
+
+model TeacherLocation {
+  teacherUserId String @id @map("teacher_user_id")
+  countryCode   String @db.Char(2) @map("country_code") // Phase 1/2 compatibility
+  postcode      String
+  radiusKm      Int    @map("radius_km")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_locations")
+}
+
+model TeacherWeeklyAvailability {
+  teacherUserId String  @map("teacher_user_id")
+  dayOfWeek     Int     @map("day_of_week")
+  isAvailable   Boolean @map("is_available")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@id([teacherUserId, dayOfWeek])
+  @@map("teacher_weekly_availability")
+}
+
+model TeacherSubscription {
+  id                   String   @id @default(uuid())
+  teacherUserId        String   @map("teacher_user_id")
+  currentPeriodEndAt   DateTime @map("current_period_end_at")
+  gracePeriodEndAt     DateTime @map("grace_period_end_at")
+  overrideVisibleUntil DateTime? @map("override_visible_until_at")
+  boostEnabled         Boolean  @default(false) @map("boost_enabled")
+  boostExpiresAt       DateTime? @map("boost_expires_at")
+  // Phase 3: tier/country/currency (optional to keep Phase 1/2 untouched)
+  tier                TeacherSubscriptionTier @default(basic)
+  countryCode         CountryCode? @map("country_code")
+  currencyCode        CurrencyCode? @map("currency_code")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@index([teacherUserId])
+  @@map("teacher_subscriptions")
+}
+
+model TeacherAvailabilityCalendar {
+  teacherUserId String   @map("teacher_user_id")
+  date          DateTime @db.Date
+  isAvailable   Boolean  @map("is_available")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@id([teacherUserId, date])
+  @@map("teacher_availability_calendar")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  type      NotificationType
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}
+
+model SchoolFavourite {
+  schoolUserId  String @map("school_id")
+  teacherUserId String @map("teacher_user_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  school  User @relation("SchoolFavouritesSchool", fields: [schoolUserId], references: [id], onDelete: Cascade)
+  teacher User @relation("SchoolFavouritesTeacher", fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@id([schoolUserId, teacherUserId])
+  @@index([teacherUserId])
+  @@map("school_favourites")
+}
+
+model TeacherSubscriptionFlags {
+  teacherUserId     String   @id @map("teacher_user_id")
+  boostActiveUntil  DateTime? @map("boost_active_until")
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@map("teacher_subscription_flags")
+}
+
+model SchoolSubscription {
+  id                String   @id @default(uuid())
+  schoolUserId      String   @map("school_user_id")
+  tier              SchoolSubscriptionTier @default(free)
+  currentPeriodEndAt DateTime @map("current_period_end_at")
+  gracePeriodEndAt   DateTime @map("grace_period_end_at")
+  countryCode        CountryCode? @map("country_code")
+  currencyCode       CurrencyCode? @map("currency_code")
+
+  school User @relation(fields: [schoolUserId], references: [id], onDelete: Cascade)
+
+  @@index([schoolUserId])
+  @@map("school_subscriptions")
+}
+
+// -------- Phase 3: country-aware configuration --------
+model CountryConfig {
+  countryCode   CountryCode @id @map("country_code")
+  currencyCode  CurrencyCode @map("currency_code")
+  legalUrl      String? @map("legal_url")
+  pricingJson   String? @map("pricing_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("country_configs")
+}
+
+// -------- Phase 3: enterprise schools --------
+model EnterpriseSchool {
+  id          String      @id @default(uuid())
+  name        String
+  countryCode CountryCode? @map("country_code")
+  createdAt   DateTime    @default(now()) @map("created_at")
+
+  members EnterpriseSchoolMember[]
+
+  @@map("enterprise_schools")
+}
+
+model EnterpriseSchoolMember {
+  enterpriseSchoolId String @map("enterprise_school_id")
+  schoolUserId       String @map("school_user_id")
+  role               EnterpriseMemberRole @default(member)
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  enterpriseSchool EnterpriseSchool @relation(fields: [enterpriseSchoolId], references: [id], onDelete: Cascade)
+  school          User            @relation(fields: [schoolUserId], references: [id], onDelete: Cascade)
+
+  @@id([enterpriseSchoolId, schoolUserId])
+  @@index([schoolUserId])
+  @@map("enterprise_school_members")
+}
+
+// -------- Phase 3: advanced messaging --------
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String   @map("sender_id")
+  receiverId String   @map("receiver_id")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  readAt     DateTime? @map("read_at")
+
+  sender   User @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("MessageReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@index([receiverId, createdAt])
+  @@index([senderId, createdAt])
+  @@map("messages")
+}
+
+// -------- Phase 3: credential verification --------
+model CredentialVerification {
+  id          String   @id @default(uuid())
+  teacherUserId String @map("teacher_user_id")
+  type        CredentialType
+  status      CredentialVerificationStatus @default(submitted)
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  decidedAt   DateTime? @map("decided_at")
+  notes       String?
+
+  teacher User @relation(fields: [teacherUserId], references: [id], onDelete: Cascade)
+
+  @@index([teacherUserId, type, status])
+  @@map("credential_verifications")
+}
+
+
