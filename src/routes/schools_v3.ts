@@ -72,6 +72,20 @@ function parseISODateOnly(input: string): Date | null {
   return d;
 }
 
+function availabilityWhereForDate(dateOnly: Date, dayOfWeek: number) {
+  return {
+    OR: [
+      { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+      {
+        AND: [
+          { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } }
+        ]
+      }
+    ]
+  };
+}
+
 async function isTeacherDiscoverableV3(opts: { teacherUserId: string; effectiveDate: Date; countryCode: string }) {
   const now = new Date();
   const dateOnly = new Date(`${toISODateOnly(opts.effectiveDate)}T00:00:00.000Z`);
@@ -137,10 +151,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } }
-        ]
+        ...availabilityWhereForDate(dateOnly, dayOfWeek)
       },
       select: {
         id: true,
