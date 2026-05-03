@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MapDiscovery } from "@/components/MapDiscovery";
 import { fakeGeocode } from "@/lib/fakeGeocode";
@@ -12,11 +12,16 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState<string | null>(null);
   const [distanceEnabled, setDistanceEnabled] = useState(false);
   const [distanceKm, setDistanceKm] = useState(15);
+  const [hasSchoolToken, setHasSchoolToken] = useState<boolean | null>(null);
 
   const center = useMemo(() => {
     if (!postcode) return null;
     return fakeGeocode(postcode, "hero");
   }, [postcode]);
+
+  useEffect(() => {
+    setHasSchoolToken(!!window.localStorage.getItem("school_access_token")?.trim());
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -196,11 +201,39 @@ export default function HomePage() {
           </div>
         </div>
 
-        <MapDiscovery
-          postcode={postcode}
-          center={center}
-          maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
-        />
+        {hasSchoolToken === null ? (
+          <div className="rounded-3xl border border-white/10 bg-ink-900 p-6 shadow-[0_18px_60px_-40px_rgba(0,0,0,0.9)]">
+            <div className="text-base font-semibold">Checking school access...</div>
+            <div className="mt-2 text-sm text-white/70">Preparing the discovery map.</div>
+          </div>
+        ) : hasSchoolToken ? (
+          <MapDiscovery
+            postcode={postcode}
+            center={center}
+            maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
+          />
+        ) : (
+          <div className="rounded-3xl border border-white/10 bg-ink-900 p-6 shadow-[0_18px_60px_-40px_rgba(0,0,0,0.9)]">
+            <div className="text-base font-semibold">School access required</div>
+            <div className="mt-2 max-w-2xl text-sm leading-relaxed text-white/70">
+              The discovery map calls protected school endpoints. Save a school access token before browsing discoverable teachers.
+            </div>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                href="/school/register"
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-ink-950 shadow-sm transition hover:bg-white/90"
+              >
+                Set up school access
+              </Link>
+              <Link
+                href="/school/login"
+                className="rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold shadow-sm transition hover:bg-white/15"
+              >
+                Paste existing token
+              </Link>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
