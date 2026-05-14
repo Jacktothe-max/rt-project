@@ -341,7 +341,12 @@ router.get(
         },
         OR: [
           { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+          {
+            AND: [
+              { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+              { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+            ]
+          }
         ]
       },
       take: 200,
