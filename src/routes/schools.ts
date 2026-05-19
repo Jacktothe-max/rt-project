@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { prisma } from "../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../auth/middleware.ts";
+import { dateOnlyUtc, getDayOfWeekMon1Sun7, hasEffectiveAvailability } from "../availability.ts";
 
 const router = Router();
 
@@ -36,15 +37,10 @@ const router = Router();
  *       404: { description: Not found }
  */
 
-function getTodayDayOfWeekMon1Sun7(d = new Date()): number {
-  // JS: 0=Sun..6=Sat => convert to 1=Mon..7=Sun
-  const js = d.getDay();
-  return js === 0 ? 7 : js;
-}
-
 async function getDiscoverableTeacherOrNull(teacherUserId: string) {
   const now = new Date();
-  const today = getTodayDayOfWeekMon1Sun7(now);
+  const today = getDayOfWeekMon1Sun7(now);
+  const dateOnly = dateOnlyUtc(now);
 
   const teacher = await prisma.user.findFirst({
     where: {
@@ -77,6 +73,10 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
         where: { dayOfWeek: today },
         select: { dayOfWeek: true, isAvailable: true }
       },
+      teacherAvailabilityCalendar: {
+        where: { date: dateOnly },
+        select: { isAvailable: true }
+      },
       teacherSubscriptions: {
         where: {
           OR: [
@@ -98,7 +98,10 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
 
   if (!teacher) return null;
 
-  const isAvailableToday = !!teacher.teacherWeeklyAvailability[0]?.isAvailable;
+  const isAvailableToday = hasEffectiveAvailability(
+    teacher.teacherAvailabilityCalendar,
+    teacher.teacherWeeklyAvailability
+  );
   const hasActiveSubscription = teacher.teacherSubscriptions.length > 0;
 
   if (!isAvailableToday || !hasActiveSubscription) return null;
@@ -157,24 +160,25 @@ router.get(
   requireRole("school"),
   async (_req: AuthenticatedRequest, res: Response) => {
     const now = new Date();
-    const today = getTodayDayOfWeekMon1Sun7(now);
+    const today = getDayOfWeekMon1Sun7(now);
+    const dateOnly = dateOnlyUtc(now);
 
     type MapTeacherRow = {
       id: string;
       teacherProfile: { name: string; profilePicture: string; teachingLevel: string } | null;
       teacherLocation: { postcode: string; radiusKm: number } | null;
+      teacherWeeklyAvailability: { isAvailable: boolean }[];
+      teacherAvailabilityCalendar: { isAvailable: boolean }[];
     };
 
     const teachers = (await prisma.user.findMany({
       where: {
         role: "teacher",
         accountStatus: "active",
-        teacherWeeklyAvailability: {
-          some: {
-            dayOfWeek: today,
-            isAvailable: true
-          }
-        },
+        OR: [
+          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+          { teacherWeeklyAvailability: { some: { dayOfWeek: today, isAvailable: true } } }
+        ],
         teacherSubscriptions: {
           some: {
             OR: [
@@ -198,12 +202,19 @@ router.get(
             postcode: true,
             radiusKm: true
           }
-        }
+        },
+        teacherWeeklyAvailability: { where: { dayOfWeek: today }, select: { isAvailable: true } },
+        teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } }
       }
     })) as MapTeacherRow[];
 
     const results = teachers
-      .filter((t: MapTeacherRow) => t.teacherProfile && t.teacherLocation)
+      .filter(
+        (t: MapTeacherRow) =>
+          t.teacherProfile &&
+          t.teacherLocation &&
+          hasEffectiveAvailability(t.teacherAvailabilityCalendar, t.teacherWeeklyAvailability)
+      )
       .map((t: MapTeacherRow) => ({
         teacherUserId: t.id,
         name: nameFirstPlusLastInitial(t.teacherProfile!.name),

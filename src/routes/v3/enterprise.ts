@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../../auth/middleware.ts";
+import { hasEffectiveAvailability } from "../../availability.ts";
 
 const router = Router();
 const prismaAny = prisma as any;
@@ -350,6 +351,8 @@ router.get(
         teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
         teacherLocation: { select: { postcode: true, radiusKm: true, countryCode: true } },
         teacherSubscriptionFlags: { select: { boostActiveUntil: true } },
+        teacherWeeklyAvailability: { where: { dayOfWeek: todayDayOfWeek }, select: { isAvailable: true } },
+        teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
         teacherSubscriptions: {
           orderBy: { currentPeriodEndAt: "desc" },
           take: 1,
@@ -359,7 +362,12 @@ router.get(
     });
 
     const out = (teachers as any[])
-      .filter((t: any) => t.teacherProfile && t.teacherLocation)
+      .filter(
+        (t: any) =>
+          t.teacherProfile &&
+          t.teacherLocation &&
+          hasEffectiveAvailability(t.teacherAvailabilityCalendar, t.teacherWeeklyAvailability)
+      )
       .map((t: any) => {
         const tier = t.teacherSubscriptions?.[0]?.tier ?? "basic";
         const isPriority = String(tier) === "pro";

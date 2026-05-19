@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { prisma } from "../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../auth/middleware.ts";
+import { hasEffectiveAvailability } from "../availability.ts";
 
 const router = Router();
 const prismaAny = prisma as any;
@@ -252,12 +253,19 @@ router.get(
         id: true,
         teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
         teacherLocation: { select: { postcode: true, radiusKm: true } },
-        teacherSubscriptionFlags: { select: { boostActiveUntil: true } }
+        teacherSubscriptionFlags: { select: { boostActiveUntil: true } },
+        teacherWeeklyAvailability: { where: { dayOfWeek: todayDayOfWeek }, select: { isAvailable: true } },
+        teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } }
       }
     });
 
     const results = (teachers as any[])
-      .filter((t: any) => t.teacherProfile && t.teacherLocation)
+      .filter(
+        (t: any) =>
+          t.teacherProfile &&
+          t.teacherLocation &&
+          hasEffectiveAvailability(t.teacherAvailabilityCalendar, t.teacherWeeklyAvailability)
+      )
       .map((t: any) => ({
         teacherUserId: t.id,
         name: t.teacherProfile!.name,
@@ -348,6 +356,7 @@ router.get(
     const schoolUserId = req.auth!.userId;
     const now = new Date();
     const today = getTodayDayOfWeekMon1Sun7(now);
+    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
     const favourites = await prismaAny.schoolFavourite.findMany({
       where: { schoolUserId },
@@ -360,6 +369,7 @@ router.get(
             teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
             teacherLocation: { select: { postcode: true, radiusKm: true } },
             teacherWeeklyAvailability: { where: { dayOfWeek: today }, select: { isAvailable: true } },
+            teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
             teacherSubscriptions: {
               where: {
                 OR: [
@@ -381,7 +391,7 @@ router.get(
         const t = f.teacher;
         if (!t || t.accountStatus !== "active") return false;
         const hasSub = t.teacherSubscriptions.length > 0;
-        const available = !!t.teacherWeeklyAvailability[0]?.isAvailable;
+        const available = hasEffectiveAvailability(t.teacherAvailabilityCalendar, t.teacherWeeklyAvailability);
         return hasSub && available && !!t.teacherProfile && !!t.teacherLocation;
       })
       .map((f: any) => ({
