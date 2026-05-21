@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MapDiscovery } from "@/components/MapDiscovery";
 import { fakeGeocode } from "@/lib/fakeGeocode";
@@ -12,6 +12,11 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState<string | null>(null);
   const [distanceEnabled, setDistanceEnabled] = useState(false);
   const [distanceKm, setDistanceKm] = useState(15);
+  const [hasSchoolToken, setHasSchoolToken] = useState(false);
+
+  useEffect(() => {
+    setHasSchoolToken(Boolean(window.localStorage.getItem("school_access_token")));
+  }, []);
 
   const center = useMemo(() => {
     if (!postcode) return null;
@@ -196,11 +201,30 @@ export default function HomePage() {
           </div>
         </div>
 
-        <MapDiscovery
-          postcode={postcode}
-          center={center}
-          maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
-        />
+        {hasSchoolToken ? (
+          <MapDiscovery
+            postcode={postcode}
+            center={center}
+            maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
+          />
+        ) : (
+          <div className="rounded-3xl border border-amber-400/20 bg-amber-400/5 p-6 shadow-[0_18px_60px_-40px_rgba(0,0,0,0.9)]">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-base font-semibold text-amber-100">School access token required</div>
+                <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/70">
+                  Teacher discovery calls the authenticated school endpoints. Add your school JWT to browse the live map.
+                </p>
+              </div>
+              <Link
+                href="/school/register"
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-ink-950 shadow-sm transition hover:bg-white/90"
+              >
+                Add school token
+              </Link>
+            </div>
+          </div>
+        )}
       </section>
     </div>
   );
