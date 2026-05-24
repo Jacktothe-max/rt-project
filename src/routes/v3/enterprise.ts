@@ -6,6 +6,20 @@ import { requireAuth, requireRole, type AuthenticatedRequest } from "../../auth/
 const router = Router();
 const prismaAny = prisma as any;
 
+function availabilityOverrideWhere(dateOnly: Date, dayOfWeek: number) {
+  return {
+    OR: [
+      { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+      {
+        AND: [
+          { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } }
+        ]
+      }
+    ]
+  };
+}
+
 /**
  * @openapi
  * tags:
@@ -339,10 +353,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
-        ]
+        ...availabilityOverrideWhere(dateOnly, todayDayOfWeek)
       },
       take: 200,
       select: {
