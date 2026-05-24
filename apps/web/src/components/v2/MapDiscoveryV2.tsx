@@ -6,8 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Map, { Layer, Marker, Source, type MapRef } from "react-map-gl";
 import clsx from "clsx";
 import { fakeGeocode } from "@/lib/fakeGeocode";
-import { fetchTeacherDetail } from "@/lib/api";
-import { addSchoolFavourite, fetchDiscoverableTeachersV2, removeSchoolFavourite, type TeacherListV2Item } from "@/lib/api_v2";
+import { addSchoolFavourite, fetchDiscoverableTeachersV2, fetchTeacherDetailV2, removeSchoolFavourite, type TeacherListV2Item } from "@/lib/api_v2";
 import { TeacherModal } from "@/components/TeacherModal";
 
 type HoverCard = { x: number; y: number; name: string; teachingLevel: string; boosted: boolean } | null;
@@ -93,7 +92,7 @@ export function MapDiscoveryV2({
     if (!selectedTeacherId) return;
     let cancelled = false;
     setSelectedTeacher(null);
-    fetchTeacherDetail(selectedTeacherId)
+    fetchTeacherDetailV2(selectedTeacherId)
       .then((d) => {
         if (cancelled) return;
         setSelectedTeacher(d);

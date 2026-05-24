@@ -32,6 +32,24 @@ const TeachersListV2ResponseSchema = z.object({
   date: z.string()
 });
 
+const TeacherDetailSchema = z.object({
+  teacherUserId: z.string(),
+  profile: z.object({
+    name: z.string(),
+    teaching_level: z.string(),
+    subjects_specialties: z.string(),
+    years_of_experience: z.number(),
+    qualifications: z.string(),
+    profile_picture: z.string()
+  }),
+  contact: z.object({
+    email_relay: z.string(),
+    phone_primary: z.string().nullable()
+  })
+});
+
+export type TeacherDetailV2 = z.infer<typeof TeacherDetailSchema>;
+
 export async function fetchDiscoverableTeachersV2(input?: {
   date?: string;
   origin_postcode?: string;
@@ -51,6 +69,25 @@ export async function fetchDiscoverableTeachersV2(input?: {
   const parsed = TeachersListV2ResponseSchema.safeParse(json);
   if (!parsed.success) throw new Error("Invalid response shape");
   return parsed.data.teachers;
+}
+
+export async function fetchTeacherDetailV2(teacherUserId: string, input?: { date?: string }): Promise<TeacherDetailV2> {
+  const token = getSchoolToken();
+  if (!token) throw new Error("Missing school access token");
+
+  const qs = new URLSearchParams();
+  if (input?.date) qs.set("date", input.date);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await fetch(`/backend/schools/v2/teachers/${encodeURIComponent(teacherUserId)}${suffix}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (res.status === 404) throw new Error("Not found");
+  if (!res.ok) throw new Error(`Request failed (${res.status})`);
+
+  const json = await res.json();
+  const parsed = TeacherDetailSchema.safeParse(json);
+  if (!parsed.success) throw new Error("Invalid response shape");
+  return parsed.data;
 }
 
 // -------- Favourites --------
