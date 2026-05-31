@@ -42,15 +42,27 @@ function getTodayDayOfWeekMon1Sun7(d = new Date()): number {
   return js === 0 ? 7 : js;
 }
 
-async function getDiscoverableTeacherOrNull(teacherUserId: string) {
+function toISODateOnly(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function parseCountryCode(input: unknown): string | null {
+  if (typeof input !== "string") return null;
+  const countryCode = input.toUpperCase();
+  return countryCode.length === 2 ? countryCode : null;
+}
+
+async function getDiscoverableTeacherOrNull(teacherUserId: string, countryCode: string) {
   const now = new Date();
   const today = getTodayDayOfWeekMon1Sun7(now);
+  const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
   const teacher = await prisma.user.findFirst({
     where: {
       id: teacherUserId,
       role: "teacher",
-      accountStatus: "active"
+      accountStatus: "active",
+      teacherLocation: { is: { countryCode } }
     },
     select: {
       id: true,
@@ -77,6 +89,10 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
         where: { dayOfWeek: today },
         select: { dayOfWeek: true, isAvailable: true }
       },
+      teacherAvailabilityCalendar: {
+        where: { date: dateOnly },
+        select: { isAvailable: true }
+      },
       teacherSubscriptions: {
         where: {
           OR: [
@@ -98,7 +114,9 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
 
   if (!teacher) return null;
 
-  const isAvailableToday = !!teacher.teacherWeeklyAvailability[0]?.isAvailable;
+  const calendarAvailability = teacher.teacherAvailabilityCalendar[0]?.isAvailable;
+  const weeklyAvailability = teacher.teacherWeeklyAvailability[0]?.isAvailable ?? false;
+  const isAvailableToday = calendarAvailability ?? weeklyAvailability;
   const hasActiveSubscription = teacher.teacherSubscriptions.length > 0;
 
   if (!isAvailableToday || !hasActiveSubscription) return null;
@@ -123,9 +141,10 @@ router.get(
   requireRole("school"),
   async (req: AuthenticatedRequest, res: Response) => {
     const teacherUserId = req.params.teacherUserId;
-    if (!teacherUserId) return res.status(400).json({ error: "Invalid request" });
+    const countryCode = parseCountryCode(req.query.country_code);
+    if (!teacherUserId || !countryCode) return res.status(400).json({ error: "Invalid request" });
 
-    const teacher = await getDiscoverableTeacherOrNull(teacherUserId);
+    const teacher = await getDiscoverableTeacherOrNull(teacherUserId, countryCode);
     if (!teacher?.teacherProfile) return res.status(404).json({ error: "Not found" });
 
     // Phase 1 email relay placeholder (actual relay service later).
@@ -155,9 +174,13 @@ router.get(
   "/teachers",
   requireAuth,
   requireRole("school"),
-  async (_req: AuthenticatedRequest, res: Response) => {
+  async (req: AuthenticatedRequest, res: Response) => {
+    const countryCode = parseCountryCode(req.query.country_code);
+    if (!countryCode) return res.status(400).json({ error: "Invalid request" });
+
     const now = new Date();
     const today = getTodayDayOfWeekMon1Sun7(now);
+    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
     type MapTeacherRow = {
       id: string;
@@ -169,12 +192,7 @@ router.get(
       where: {
         role: "teacher",
         accountStatus: "active",
-        teacherWeeklyAvailability: {
-          some: {
-            dayOfWeek: today,
-            isAvailable: true
-          }
-        },
+        teacherLocation: { is: { countryCode } },
         teacherSubscriptions: {
           some: {
             OR: [
@@ -182,7 +200,16 @@ router.get(
               { overrideVisibleUntil: { not: null, gte: now } }
             ]
           }
-        }
+        },
+        OR: [
+          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+          {
+            AND: [
+              { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+              { teacherWeeklyAvailability: { some: { dayOfWeek: today, isAvailable: true } } }
+            ]
+          }
+        ]
       },
       select: {
         id: true,
