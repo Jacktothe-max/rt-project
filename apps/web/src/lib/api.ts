@@ -42,11 +42,18 @@ function getSchoolToken(): string | null {
   return window.localStorage.getItem("school_access_token");
 }
 
+function getSelectedCountryCode(): string {
+  if (typeof window === "undefined") return "AU";
+  const saved = window.localStorage.getItem("country_code")?.toUpperCase();
+  return saved && saved.length === 2 ? saved : "AU";
+}
+
 export async function fetchDiscoverableTeachers(): Promise<TeacherListItem[]> {
   const token = getSchoolToken();
   if (!token) throw new Error("Missing school access token");
+  const countryCode = getSelectedCountryCode();
 
-  const res = await fetch("/backend/schools/teachers", {
+  const res = await fetch(`/backend/schools/teachers?country_code=${encodeURIComponent(countryCode)}`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
@@ -60,10 +67,14 @@ export async function fetchDiscoverableTeachers(): Promise<TeacherListItem[]> {
 export async function fetchTeacherDetail(teacherUserId: string): Promise<TeacherDetail> {
   const token = getSchoolToken();
   if (!token) throw new Error("Missing school access token");
+  const countryCode = getSelectedCountryCode();
 
-  const res = await fetch(`/backend/schools/teachers/${encodeURIComponent(teacherUserId)}`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
+  const res = await fetch(
+    `/backend/schools/teachers/${encodeURIComponent(teacherUserId)}?country_code=${encodeURIComponent(countryCode)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` }
+    }
+  );
   if (res.status === 404) throw new Error("Not found");
   if (!res.ok) throw new Error(`Request failed (${res.status})`);
 
