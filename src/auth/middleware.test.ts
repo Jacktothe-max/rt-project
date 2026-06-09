@@ -1,13 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Response } from "express";
-import { createRequireAuth, type AuthenticatedRequest } from "./middleware.ts";
+
+process.env.DATABASE_URL ??= "postgresql://test:test@localhost:5432/test";
+process.env.JWT_SECRET ??= "test-secret-at-least-16-characters";
+process.env.JWT_ISSUER ??= "test";
+
+type AuthenticatedRequest = import("./middleware.ts").AuthenticatedRequest;
+type CreateRequireAuth = typeof import("./middleware.ts").createRequireAuth;
 
 type TestUser = {
   id: string;
   role: "teacher" | "school" | "admin";
   accountStatus: "active" | "suspended" | "disabled";
 };
+
+let requireAuthFactory: CreateRequireAuth | null = null;
+
+async function loadRequireAuthFactory(): Promise<CreateRequireAuth> {
+  if (!requireAuthFactory) {
+    ({ createRequireAuth: requireAuthFactory } = await import("./middleware.ts"));
+  }
+  return requireAuthFactory;
+}
 
 function createRequest(authHeader: string | undefined): AuthenticatedRequest {
   return {
@@ -37,6 +52,7 @@ async function runAuthWithUser(user: TestUser | null) {
   const { res, state } = createResponse();
   let nextCalled = false;
   let nextError: unknown;
+  const createRequireAuth = await loadRequireAuthFactory();
   const handler = createRequireAuth({
     verifyToken: () => ({ sub: "user-1", role: "teacher", iss: "test" }),
     findUserById: async () => user
