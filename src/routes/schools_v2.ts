@@ -230,7 +230,7 @@ router.get(
       originPostcode !== null && maxDistanceKm !== null && Number.isFinite(maxDistanceKm) && maxDistanceKm > 0;
     const originCoords = hasDistanceFilter ? fakeGeocode(originPostcode!, "origin") : null;
 
-    // Get teachers with active subs + availability (calendar OR weekly).
+    // Calendar entries override weekly availability: an explicit unavailable day must hide the teacher.
     const teachers = await prismaAny.user.findMany({
       where: {
         role: "teacher",
@@ -245,7 +245,12 @@ router.get(
         },
         OR: [
           { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+          {
+            AND: [
+              { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+              { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+            ]
+          }
         ]
       },
       select: {
@@ -360,6 +365,10 @@ router.get(
             teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
             teacherLocation: { select: { postcode: true, radiusKm: true } },
             teacherWeeklyAvailability: { where: { dayOfWeek: today }, select: { isAvailable: true } },
+            teacherAvailabilityCalendar: {
+              where: { date: new Date(`${toISODateOnly(now)}T00:00:00.000Z`) },
+              select: { isAvailable: true }
+            },
             teacherSubscriptions: {
               where: {
                 OR: [
@@ -381,7 +390,9 @@ router.get(
         const t = f.teacher;
         if (!t || t.accountStatus !== "active") return false;
         const hasSub = t.teacherSubscriptions.length > 0;
-        const available = !!t.teacherWeeklyAvailability[0]?.isAvailable;
+        const calendarAvailability = t.teacherAvailabilityCalendar[0]?.isAvailable;
+        const weeklyAvailability = t.teacherWeeklyAvailability[0]?.isAvailable ?? false;
+        const available = calendarAvailability ?? weeklyAvailability;
         return hasSub && available && !!t.teacherProfile && !!t.teacherLocation;
       })
       .map((f: any) => ({
