@@ -139,7 +139,12 @@ router.get(
         },
         OR: [
           { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } }
+          {
+            AND: [
+              { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } },
+              { teacherAvailabilityCalendar: { none: { date: dateOnly } } }
+            ]
+          }
         ]
       },
       select: {
