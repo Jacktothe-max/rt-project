@@ -230,7 +230,7 @@ router.get(
       originPostcode !== null && maxDistanceKm !== null && Number.isFinite(maxDistanceKm) && maxDistanceKm > 0;
     const originCoords = hasDistanceFilter ? fakeGeocode(originPostcode!, "origin") : null;
 
-    // Get teachers with active subs + availability (calendar OR weekly).
+    // Calendar availability overrides the weekly template when a row exists for the date.
     const teachers = await prismaAny.user.findMany({
       where: {
         role: "teacher",
@@ -245,7 +245,12 @@ router.get(
         },
         OR: [
           { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+          {
+            AND: [
+              { teacherAvailabilityCalendar: { none: { date: dateOnly } } },
+              { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
+            ]
+          }
         ]
       },
       select: {
