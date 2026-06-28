@@ -71,6 +71,41 @@ function toISODateOnly(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+async function isTeacherDiscoverableForMessaging(opts: { teacherUserId: string; countryCode: string }) {
+  const now = new Date();
+  const dayOfWeek = getDayOfWeekMon1Sun7(now);
+  const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
+
+  const teacher = await prismaAny.user.findFirst({
+    where: { id: opts.teacherUserId, role: "teacher", accountStatus: "active" },
+    select: {
+      teacherLocation: { select: { countryCode: true } },
+      teacherWeeklyAvailability: { where: { dayOfWeek }, select: { isAvailable: true } },
+      teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
+      teacherSubscriptions: {
+        where: {
+          OR: [
+            { gracePeriodEndAt: { gte: now } },
+            { overrideVisibleUntil: { not: null, gte: now } }
+          ]
+        },
+        take: 1,
+        select: { id: true }
+      }
+    }
+  });
+
+  if (!teacher?.teacherLocation) return false;
+  if (String(teacher.teacherLocation.countryCode).toUpperCase() !== opts.countryCode) return false;
+
+  const hasActiveSub = (teacher.teacherSubscriptions?.length ?? 0) > 0;
+  const cal = teacher.teacherAvailabilityCalendar?.[0]?.isAvailable;
+  const weekly = teacher.teacherWeeklyAvailability?.[0]?.isAvailable ?? false;
+  const available = (cal ?? weekly) === true;
+
+  return hasActiveSub && available;
+}
+
 // Phase 3: send a message (scaffold)
 router.post("/messages", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const schema = z.object({
@@ -83,7 +118,6 @@ router.post("/messages", requireAuth, async (req: AuthenticatedRequest, res: Res
   if (!parsed.success) return res.status(400).json({ error: "Invalid request" });
 
   const senderId = req.auth!.userId;
-  const senderRole = req.auth!.role;
   const receiverId = parsed.data.receiver_id;
   const countryCode = parsed.data.country_code ? parsed.data.country_code.toUpperCase() : null;
 
@@ -100,41 +134,12 @@ router.post("/messages", requireAuth, async (req: AuthenticatedRequest, res: Res
   if (!receiver) return res.status(404).json({ error: "Not found" });
   if (receiver.accountStatus !== "active") return res.status(404).json({ error: "Not found" });
 
-  // Enforce discoverability & country rules for school -> teacher messaging
-  if (senderRole === "school" && receiver.role === "teacher") {
+  // Any message to a teacher must respect the same visibility rules as teacher discovery.
+  if (receiver.role === "teacher") {
     if (!countryCode) return res.status(400).json({ error: "country_code required" });
 
-    const now = new Date();
-    const dayOfWeek = getDayOfWeekMon1Sun7(now);
-    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
-
-    const t = await prismaAny.user.findFirst({
-      where: { id: receiverId, role: "teacher", accountStatus: "active" },
-      select: {
-        teacherLocation: { select: { countryCode: true } },
-        teacherWeeklyAvailability: { where: { dayOfWeek }, select: { isAvailable: true } },
-        teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
-        teacherSubscriptions: {
-          where: {
-            OR: [
-              { gracePeriodEndAt: { gte: now } },
-              { overrideVisibleUntil: { not: null, gte: now } }
-            ]
-          },
-          take: 1,
-          select: { id: true }
-        }
-      }
-    });
-
-    const countryOk =
-      !!t?.teacherLocation && String(t.teacherLocation.countryCode).toUpperCase() === countryCode;
-    const hasActiveSub = (t?.teacherSubscriptions?.length ?? 0) > 0;
-    const cal = t?.teacherAvailabilityCalendar?.[0]?.isAvailable;
-    const weekly = t?.teacherWeeklyAvailability?.[0]?.isAvailable ?? false;
-    const available = (cal ?? weekly) === true;
-
-    if (!(countryOk && hasActiveSub && available)) return res.status(403).json({ error: "Forbidden" });
+    const discoverable = await isTeacherDiscoverableForMessaging({ teacherUserId: receiverId, countryCode });
+    if (!discoverable) return res.status(403).json({ error: "Forbidden" });
   }
 
   const msg = await prismaAny.message.create({
