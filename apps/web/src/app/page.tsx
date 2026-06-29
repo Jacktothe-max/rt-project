@@ -143,6 +143,17 @@ export default function HomePage() {
                 <div className="mt-2 text-sm leading-relaxed text-white/60">Browse qualified teachers with complete profiles and credentials.</div>
               </div>
             </div>
+
+            <div className="mt-10 rounded-2xl border border-white/10 bg-gradient-to-b from-white/10 to-transparent p-6 text-left shadow-sm">
+              <div className="text-sm font-semibold">School access required</div>
+              <div className="mt-2 text-sm leading-relaxed text-white/70">
+                The discovery map uses authenticated school endpoints. Use{" "}
+                <Link href="/school/register" className="underline decoration-white/30 underline-offset-4 hover:decoration-white/60">
+                  Browse as a School
+                </Link>{" "}
+                to save a school access token before loading live teacher data.
+              </div>
+            </div>
           </div>
         </div>
       </section>

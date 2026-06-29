@@ -488,12 +488,11 @@ export default function TeacherRegisterPage() {
             ) : (
               <>
                 <button
-                  disabled={busy}
+                  disabled={busy || !!token}
                   className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-400 to-blue-400 px-8 text-sm font-semibold text-ink-950 shadow-lg transition hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
                   onClick={async () => {
                     setBusy(true);
                     setError(null);
-                    setResult(null);
                     try {
                       const res = await fetch("/backend/teachers/register", {
                         method: "POST",
@@ -523,6 +522,14 @@ export default function TeacherRegisterPage() {
                         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                       </svg>
                       Creating account...
+                    </>
+                  ) : token ? (
+                    <>
+                      Account created
+                      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M9 12l2 2 4-4" />
+                        <circle cx="12" cy="12" r="9" />
+                      </svg>
                     </>
                   ) : (
                     <>
