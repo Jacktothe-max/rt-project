@@ -152,8 +152,26 @@ export default function HomePage() {
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Browse Available Teachers</h2>
           <p className="mx-auto mt-3 max-w-2xl text-base text-white/60">
-            Explore qualified relief teachers in your area. Zoom in to see individual profiles and availability.
+            School access is required to load live teacher data. Set up your school token before browsing the map.
           </p>
+        </div>
+
+        <div className="mb-6 rounded-3xl border border-amber-300/20 bg-amber-300/5 p-5 shadow-[0_18px_60px_-40px_rgba(0,0,0,0.9)]">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-amber-100">School access required</div>
+              <p className="mt-2 max-w-3xl text-sm leading-relaxed text-white/70">
+                The discovery map calls authenticated school endpoints. Paste a school JWT on the school access page
+                to store it locally, then return here to view discoverable teachers.
+              </p>
+            </div>
+            <Link
+              href="/school/register"
+              className="inline-flex h-11 shrink-0 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-ink-950 shadow-sm transition hover:bg-white/90"
+            >
+              Set up school access
+            </Link>
+          </div>
         </div>
 
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
