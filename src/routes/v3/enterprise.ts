@@ -2,6 +2,7 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { prisma } from "../../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../../auth/middleware.ts";
+import { buildAvailabilityOverrideWhere } from "../availability.ts";
 
 const router = Router();
 const prismaAny = prisma as any;
@@ -339,10 +340,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
-        ]
+        ...buildAvailabilityOverrideWhere(dateOnly, todayDayOfWeek)
       },
       take: 200,
       select: {

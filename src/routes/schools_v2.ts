@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { prisma } from "../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../auth/middleware.ts";
+import { buildAvailabilityOverrideWhere, resolveAvailabilityOverride } from "./availability.ts";
 
 const router = Router();
 const prismaAny = prisma as any;
@@ -204,9 +205,10 @@ async function isTeacherDiscoverableOnDate(teacherUserId: string, date: Date): P
 
   if (!teacher) return false;
   const hasActiveSubscription = teacher.teacherSubscriptions.length > 0;
-  const cal = teacher.teacherAvailabilityCalendar[0]?.isAvailable;
-  const weekly = teacher.teacherWeeklyAvailability[0]?.isAvailable ?? false;
-  const isAvailable = cal ?? weekly; // Phase 2 uses calendar when present, otherwise weekly fallback
+  const isAvailable = resolveAvailabilityOverride(
+    teacher.teacherAvailabilityCalendar[0]?.isAvailable,
+    teacher.teacherWeeklyAvailability[0]?.isAvailable
+  );
   return hasActiveSubscription && isAvailable;
 }
 
@@ -243,10 +245,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
-        ]
+        ...buildAvailabilityOverrideWhere(dateOnly, todayDayOfWeek)
       },
       select: {
         id: true,
@@ -348,6 +347,7 @@ router.get(
     const schoolUserId = req.auth!.userId;
     const now = new Date();
     const today = getTodayDayOfWeekMon1Sun7(now);
+    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
     const favourites = await prismaAny.schoolFavourite.findMany({
       where: { schoolUserId },
@@ -360,6 +360,7 @@ router.get(
             teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
             teacherLocation: { select: { postcode: true, radiusKm: true } },
             teacherWeeklyAvailability: { where: { dayOfWeek: today }, select: { isAvailable: true } },
+            teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
             teacherSubscriptions: {
               where: {
                 OR: [
@@ -381,7 +382,10 @@ router.get(
         const t = f.teacher;
         if (!t || t.accountStatus !== "active") return false;
         const hasSub = t.teacherSubscriptions.length > 0;
-        const available = !!t.teacherWeeklyAvailability[0]?.isAvailable;
+        const available = resolveAvailabilityOverride(
+          t.teacherAvailabilityCalendar[0]?.isAvailable,
+          t.teacherWeeklyAvailability[0]?.isAvailable
+        );
         return hasSub && available && !!t.teacherProfile && !!t.teacherLocation;
       })
       .map((f: any) => ({
