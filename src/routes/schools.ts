@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { prisma } from "../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../auth/middleware.ts";
+import { buildAvailabilityOverrideWhere, resolveAvailabilityOverride } from "./availability.ts";
 
 const router = Router();
 
@@ -42,9 +43,14 @@ function getTodayDayOfWeekMon1Sun7(d = new Date()): number {
   return js === 0 ? 7 : js;
 }
 
+function toISODateOnly(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 async function getDiscoverableTeacherOrNull(teacherUserId: string) {
   const now = new Date();
   const today = getTodayDayOfWeekMon1Sun7(now);
+  const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
   const teacher = await prisma.user.findFirst({
     where: {
@@ -77,6 +83,10 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
         where: { dayOfWeek: today },
         select: { dayOfWeek: true, isAvailable: true }
       },
+      teacherAvailabilityCalendar: {
+        where: { date: dateOnly },
+        select: { isAvailable: true }
+      },
       teacherSubscriptions: {
         where: {
           OR: [
@@ -98,7 +108,10 @@ async function getDiscoverableTeacherOrNull(teacherUserId: string) {
 
   if (!teacher) return null;
 
-  const isAvailableToday = !!teacher.teacherWeeklyAvailability[0]?.isAvailable;
+  const isAvailableToday = resolveAvailabilityOverride(
+    teacher.teacherAvailabilityCalendar[0]?.isAvailable,
+    teacher.teacherWeeklyAvailability[0]?.isAvailable
+  );
   const hasActiveSubscription = teacher.teacherSubscriptions.length > 0;
 
   if (!isAvailableToday || !hasActiveSubscription) return null;
@@ -158,6 +171,7 @@ router.get(
   async (_req: AuthenticatedRequest, res: Response) => {
     const now = new Date();
     const today = getTodayDayOfWeekMon1Sun7(now);
+    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
     type MapTeacherRow = {
       id: string;
@@ -169,12 +183,7 @@ router.get(
       where: {
         role: "teacher",
         accountStatus: "active",
-        teacherWeeklyAvailability: {
-          some: {
-            dayOfWeek: today,
-            isAvailable: true
-          }
-        },
+        ...buildAvailabilityOverrideWhere(dateOnly, today),
         teacherSubscriptions: {
           some: {
             OR: [

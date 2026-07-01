@@ -1,6 +1,7 @@
 import { Router, type Response } from "express";
 import { prisma } from "../db.ts";
 import { requireAuth, requireRole, type AuthenticatedRequest } from "../auth/middleware.ts";
+import { buildAvailabilityOverrideWhere, resolveAvailabilityOverride } from "./availability.ts";
 
 const router = Router();
 const prismaAny = prisma as any;
@@ -100,9 +101,10 @@ async function isTeacherDiscoverableV3(opts: { teacherUserId: string; effectiveD
   if (String(teacher.teacherLocation.countryCode).toUpperCase() !== opts.countryCode) return false;
 
   const hasActiveSubscription = teacher.teacherSubscriptions.length > 0;
-  const cal = teacher.teacherAvailabilityCalendar[0]?.isAvailable;
-  const weekly = teacher.teacherWeeklyAvailability[0]?.isAvailable ?? false;
-  const isAvailable = cal ?? weekly; // Phase 2/3 rule: calendar overrides weekly if present
+  const isAvailable = resolveAvailabilityOverride(
+    teacher.teacherAvailabilityCalendar[0]?.isAvailable,
+    teacher.teacherWeeklyAvailability[0]?.isAvailable
+  );
 
   return hasActiveSubscription && isAvailable;
 }
@@ -137,10 +139,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } }
-        ]
+        ...buildAvailabilityOverrideWhere(dateOnly, dayOfWeek)
       },
       select: {
         id: true,
