@@ -148,6 +148,20 @@ async function getEnterpriseMembershipOrNull(input: { enterpriseSchoolId: string
   });
 }
 
+function availabilityOverrideWhere(dateOnly: Date, dayOfWeek: number) {
+  return {
+    OR: [
+      { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+      {
+        AND: [
+          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } },
+          { teacherAvailabilityCalendar: { none: { date: dateOnly } } }
+        ]
+      }
+    ]
+  };
+}
+
 function requireEnterpriseAccess(level: "member" | "admin") {
   return async (req: AuthenticatedRequest, res: Response, next: Function) => {
     // Admin users always allowed
@@ -339,10 +353,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
-        ]
+        ...availabilityOverrideWhere(dateOnly, todayDayOfWeek)
       },
       take: 200,
       select: {
