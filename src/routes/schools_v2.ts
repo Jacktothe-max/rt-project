@@ -140,6 +140,20 @@ function parseISODateOnly(input: string): Date | null {
   return d;
 }
 
+function availabilityOverrideWhere(dateOnly: Date, dayOfWeek: number) {
+  return {
+    OR: [
+      { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
+      {
+        AND: [
+          { teacherWeeklyAvailability: { some: { dayOfWeek, isAvailable: true } } },
+          { teacherAvailabilityCalendar: { none: { date: dateOnly } } }
+        ]
+      }
+    ]
+  };
+}
+
 // Phase 2 placeholder distance calc: deterministic postcode -> coords (same style as frontend fakeGeocode)
 function hashString(input: string): number {
   let h = 2166136261;
@@ -243,10 +257,7 @@ router.get(
             ]
           }
         },
-        OR: [
-          { teacherAvailabilityCalendar: { some: { date: dateOnly, isAvailable: true } } },
-          { teacherWeeklyAvailability: { some: { dayOfWeek: todayDayOfWeek, isAvailable: true } } }
-        ]
+        ...availabilityOverrideWhere(dateOnly, todayDayOfWeek)
       },
       select: {
         id: true,
@@ -348,6 +359,7 @@ router.get(
     const schoolUserId = req.auth!.userId;
     const now = new Date();
     const today = getTodayDayOfWeekMon1Sun7(now);
+    const dateOnly = new Date(`${toISODateOnly(now)}T00:00:00.000Z`);
 
     const favourites = await prismaAny.schoolFavourite.findMany({
       where: { schoolUserId },
@@ -360,6 +372,7 @@ router.get(
             teacherProfile: { select: { name: true, profilePicture: true, teachingLevel: true } },
             teacherLocation: { select: { postcode: true, radiusKm: true } },
             teacherWeeklyAvailability: { where: { dayOfWeek: today }, select: { isAvailable: true } },
+            teacherAvailabilityCalendar: { where: { date: dateOnly }, select: { isAvailable: true } },
             teacherSubscriptions: {
               where: {
                 OR: [
@@ -381,7 +394,9 @@ router.get(
         const t = f.teacher;
         if (!t || t.accountStatus !== "active") return false;
         const hasSub = t.teacherSubscriptions.length > 0;
-        const available = !!t.teacherWeeklyAvailability[0]?.isAvailable;
+        const cal = t.teacherAvailabilityCalendar?.[0]?.isAvailable;
+        const weekly = t.teacherWeeklyAvailability[0]?.isAvailable ?? false;
+        const available = (cal ?? weekly) === true;
         return hasSub && available && !!t.teacherProfile && !!t.teacherLocation;
       })
       .map((f: any) => ({
