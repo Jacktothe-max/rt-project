@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { MapDiscovery } from "@/components/MapDiscovery";
 import { fakeGeocode } from "@/lib/fakeGeocode";
@@ -12,11 +12,16 @@ export default function HomePage() {
   const [postcode, setPostcode] = useState<string | null>(null);
   const [distanceEnabled, setDistanceEnabled] = useState(false);
   const [distanceKm, setDistanceKm] = useState(15);
+  const [hasSchoolToken, setHasSchoolToken] = useState(false);
 
   const center = useMemo(() => {
     if (!postcode) return null;
     return fakeGeocode(postcode, "hero");
   }, [postcode]);
+
+  useEffect(() => {
+    setHasSchoolToken(!!window.localStorage.getItem("school_access_token")?.trim());
+  }, []);
 
   return (
     <div className="min-h-screen">
@@ -173,13 +178,13 @@ export default function HomePage() {
                 type="checkbox"
                 checked={distanceEnabled}
                 onChange={(e) => setDistanceEnabled(e.target.checked)}
-                disabled={!postcode}
+                disabled={!postcode || !hasSchoolToken}
                 className="rounded border-white/20"
               />
               <span className="font-medium">Filter by distance</span>
             </label>
 
-            {distanceEnabled && postcode && (
+            {distanceEnabled && postcode && hasSchoolToken && (
               <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2 shadow-sm">
                 <input
                   type="range"
@@ -196,11 +201,27 @@ export default function HomePage() {
           </div>
         </div>
 
-        <MapDiscovery
-          postcode={postcode}
-          center={center}
-          maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
-        />
+        {hasSchoolToken ? (
+          <MapDiscovery
+            postcode={postcode}
+            center={center}
+            maxDistanceKm={distanceEnabled && postcode ? distanceKm : null}
+          />
+        ) : (
+          <div className="rounded-3xl border border-amber-400/20 bg-amber-400/10 p-6 shadow-[0_18px_60px_-40px_rgba(0,0,0,0.9)]">
+            <div className="text-base font-semibold text-amber-100">School access required</div>
+            <div className="mt-2 max-w-3xl text-sm leading-relaxed text-amber-100/80">
+              The discovery map calls authenticated school endpoints, so you need to save a school access token before
+              browsing available teachers.
+            </div>
+            <Link
+              href="/school/register"
+              className="mt-4 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-semibold text-ink-950 shadow-sm transition hover:bg-white/90"
+            >
+              Set up school access
+            </Link>
+          </div>
+        )}
       </section>
     </div>
   );
