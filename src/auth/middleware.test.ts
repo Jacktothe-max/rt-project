@@ -22,14 +22,14 @@ function makeRequest(token: string): AuthenticatedRequest {
 }
 
 function makeResponse(): Response & { statusCode?: number; body?: unknown } {
-  const response = {
+  const response: Partial<Response> & { statusCode?: number; body?: unknown } = {
     status(code: number) {
       this.statusCode = code;
-      return this;
+      return this as Response;
     },
     json(body: unknown) {
       this.body = body;
-      return this;
+      return this as Response;
     }
   };
 
